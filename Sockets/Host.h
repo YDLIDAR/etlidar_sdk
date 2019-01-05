@@ -225,6 +225,12 @@ extern "C"
 #define STAT_BLK_SIZE(x)    ((x).st_blksize)
 
 
+#define DEFAULT_CONNECTION_TIMEOUT_SEC 2
+#define DEFAULT_CONNECTION_TIMEOUT_USEC 0
+
+#define DEFAULT_REV_TIMEOUT_SEC 10
+#define DEFAULT_REV_TIMEOUT_USEC 0
+
 /*---------------------------------------------------------------------------*/
 /*                                                                           */
 /* Misc Macros                                                               */

@@ -107,6 +107,11 @@ data structure:
 		* @brief system time.
 		*/
 		uint64_t system_timestamp;
+
+    		/**
+     		* @brief scan_time
+     		*/
+    		uint64_t scan_time;
 	} lidarData;
 
 example parsing:

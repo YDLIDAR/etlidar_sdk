@@ -123,7 +123,7 @@ private:
     /* ETLidar specific Variables */
     std::string               m_deviceIp;
     int                       m_port;
-
+    int                       m_sampleRate;
     /* Sockets for ydlidar */
     CActiveSocket             socket_cmd;
     CPassiveSocket            socket_data;

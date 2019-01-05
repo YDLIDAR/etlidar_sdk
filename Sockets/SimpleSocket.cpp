@@ -51,7 +51,7 @@ CSimpleSocket::CSimpleSocket(CSocketType nType) :
     m_nBytesSent(-1), m_nFlags(0),
     m_bIsBlocking(true)
 {
-    SetConnectTimeout(1, 0);
+    SetConnectTimeout(DEFAULT_CONNECTION_TIMEOUT_SEC, DEFAULT_CONNECTION_TIMEOUT_USEC);
     memset(&m_stRecvTimeout, 0, sizeof(struct timeval));
     memset(&m_stSendTimeout, 0, sizeof(struct timeval));
     memset(&m_stLinger, 0, sizeof(struct linger));
@@ -142,7 +142,7 @@ bool CSimpleSocket::Initialize()
     // Data structure containing general Windows Sockets Info
     //-------------------------------------------------------------------------
     memset(&m_hWSAData, 0, sizeof(m_hWSAData));
-    WSAStartup(MAKEWORD(2, 0), &m_hWSAData);
+    WSAStartup(MAKEWORD(2, 2), &m_hWSAData);
 #endif
 
     //-------------------------------------------------------------------------
@@ -378,8 +378,13 @@ int32_t CSimpleSocket::Send(const uint8_t *pBuf, size_t bytesToSend)
                 //---------------------------------------------------------
                 do
                 {
-                    m_nBytesSent = SEND(m_socket, pBuf, bytesToSend, 0);
-                    TranslateSocketError();
+                  m_timer.SetEndTime();
+                  if (m_timer.GetMilliSeconds()> DEFAULT_REV_TIMEOUT_SEC * 1000) {
+                      SetSocketError(CSimpleSocket::SocketTimedout);
+                      break;
+                  }
+                  m_nBytesSent = SEND(m_socket, pBuf, bytesToSend, 0);
+                  TranslateSocketError();
                 } while (GetSocketError() == CSimpleSocket::SocketInterrupted);
 
                 m_timer.SetEndTime();
@@ -411,6 +416,11 @@ int32_t CSimpleSocket::Send(const uint8_t *pBuf, size_t bytesToSend)
                 {
                     do
                     {
+                    m_timer.SetEndTime();
+                    if (m_timer.GetMilliSeconds()> DEFAULT_REV_TIMEOUT_SEC * 1000) {
+                        SetSocketError(CSimpleSocket::SocketTimedout);
+                        break;
+                    }
                         m_nBytesSent = SENDTO(m_socket, pBuf, bytesToSend, 0, (const sockaddr *)&m_stServerSockaddr, sizeof(m_stServerSockaddr));
                         TranslateSocketError();
                     } while (GetSocketError() == CSimpleSocket::SocketInterrupted);
@@ -728,10 +738,15 @@ int32_t CSimpleSocket::Receive(int32_t nMaxBytes, uint8_t * pBuffer )
     {
         do
         {
+        m_timer.SetEndTime();
+                    if (m_timer.GetMilliSeconds()> DEFAULT_REV_TIMEOUT_SEC*1000) {
+                        SetSocketError(CSimpleSocket::SocketTimedout);
+                        break;
+                    }
             m_nBytesReceived = RECV(m_socket, (pWorkBuffer + m_nBytesReceived),
                                     nMaxBytes, m_nFlags);
             TranslateSocketError();
-            if(m_nBytesReceived >= nMaxBytes)
+            if(m_nBytesReceived >= nMaxBytes || m_nBytesReceived <= 0)
                 break;
         } while ((GetSocketError() == CSimpleSocket::SocketInterrupted));
 
@@ -747,10 +762,15 @@ int32_t CSimpleSocket::Receive(int32_t nMaxBytes, uint8_t * pBuffer )
         {
             do
             {
+            m_timer.SetEndTime();
+                            if (m_timer.GetMilliSeconds()> DEFAULT_REV_TIMEOUT_SEC * 1000) {
+                                SetSocketError(CSimpleSocket::SocketTimedout);
+                                break;
+                            }
                 m_nBytesReceived = RECVFROM(m_socket, pWorkBuffer, nMaxBytes, 0,
                                             &m_stMulticastGroup, &srcSize);
                 TranslateSocketError();
-                if(m_nBytesReceived >= nMaxBytes)
+                if(m_nBytesReceived >= nMaxBytes || m_nBytesReceived <= 0)
                     break;
             } while (GetSocketError() == CSimpleSocket::SocketInterrupted);
         }
@@ -758,6 +778,11 @@ int32_t CSimpleSocket::Receive(int32_t nMaxBytes, uint8_t * pBuffer )
         {
             do
             {
+            m_timer.SetEndTime();
+                            if (m_timer.GetMilliSeconds()> DEFAULT_REV_TIMEOUT_SEC * 1000) {
+                                SetSocketError(CSimpleSocket::SocketTimedout);
+                                break;
+                            }
                 m_nBytesReceived = RECVFROM(m_socket, pWorkBuffer, nMaxBytes, 0,
                                             &m_stClientSockaddr, &srcSize);
                 TranslateSocketError();

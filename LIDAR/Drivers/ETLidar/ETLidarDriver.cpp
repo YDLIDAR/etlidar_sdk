@@ -44,7 +44,8 @@ ETLidarDriver::ETLidarDriver(std::string lidarIP, int port) :
     m_running(false),
     m_callback(nullptr),
     m_deviceIp(lidarIP),
-    m_port(port)
+    m_port(port),
+    m_sampleRate(20000)
 {
 
     socket_data.SetSocketType(CSimpleSocket::SocketTypeUdp);
@@ -55,8 +56,8 @@ ETLidarDriver::ETLidarDriver(std::string lidarIP, int port) :
     }
 
     lidarConfig config = getScanCfg();
-    config.laser_en = 1;
-    setScanCfg(config);
+    //config.laser_en = 1;
+    //setScanCfg(config);
 
     if(!dataPortConnect(config.deviceIp, config.dataRecvPort)) {
         throw DeviceException(socket_data.DescribeError());
@@ -70,17 +71,20 @@ void ETLidarDriver::_ThreadFunc()
     lidarData scandata;
     int timeout = 0;
     startMeasure();
+    printf("[ETLIDAR INFO] Now ETLIDAR is scanning ......\n");
     while (m_running) {
         try {
             lidarData local_data;
             getScanData(local_data);
             if(local_data.headFrameFlag) {
-                if(m_callback) {
-                    m_callback(scandata);
+                if(m_callback&&scandata.data.size()) {
+                  m_callback(scandata);
                 }
                 scandata.data.clear();
                 scandata = local_data;
+                scandata.system_timestamp = local_data.system_timestamp - 1e9/m_sampleRate*local_data.data.size();
             } else {
+                scandata.scan_time += local_data.scan_time;
                 scandata.data.insert( scandata.data.end(), local_data.data.begin(),  local_data.data.end());
             }
             timeout = 0;
@@ -106,6 +110,7 @@ void ETLidarDriver::_ThreadFunc()
         }
 
     }
+    stopMeasure();
 }
 
 
@@ -144,16 +149,16 @@ char* ETLidarDriver::configMessage(const char* descriptor, char* value) {
     valLastName(transDesc);
 
     sprintf(buf, "%s=%s\n", transDesc, value);
-    printf("TX command:%s", buf);
-    fflush(stdout);
+    //printf("TX command:%s", buf);
+    //fflush(stdout);
 
     socket_cmd.Send(reinterpret_cast<uint8_t*>(buf),strlen(buf) );
 
     memset(buf, 0, sizeof(buf));
     if(socket_cmd.Select(0, 50000)) {
         socket_cmd.Receive(sizeof(buf),reinterpret_cast<uint8_t*>(buf));
-        printf("RX command:%s\n", buf);
-        fflush(stdout);
+        //printf("RX command:%s\n", buf);
+        //fflush(stdout);
         if (2 == sscanf(buf, "%[^=]=%[^=]", recvDesc, recvValue)) {
             if (!strcmp(transDesc, recvDesc)) {
                 return recvValue;
@@ -171,11 +176,17 @@ char* ETLidarDriver::configMessage(const char* descriptor, char* value) {
 }
 
 bool ETLidarDriver::startMeasure() {
-    return (bool)configMessage("laser_en", (char *)configValue[1]);
+    bool ret ;
+    ret = configMessage("motor_en", (char *)configValue[1]) != NULL;
+    ret &= configMessage("laser_en", (char *)configValue[1]) != NULL;
+    return ret;
 }
 
 bool ETLidarDriver::stopMeasure() {
-    return (bool)configMessage("laser_en", (char *)configValue[0]);
+    bool ret ;
+    ret = configMessage("motor_en", (char *)configValue[0]) != NULL;
+    ret &= configMessage("laser_en", (char *)configValue[0]) != NULL;
+    return ret;
 }
 
 lidarConfig ETLidarDriver::getScanCfg() {
@@ -293,8 +304,8 @@ bool ETLidarDriver::dataPortConnect(const char* lidarIP, int localPort) {
         }
     }
     if(lidarIP) {
-        printf("ydlidar device ip: %s\n", lidarIP);
-        fflush(stdout);
+        //printf("ydlidar device ip: %s\n", lidarIP);
+        //fflush(stdout);
     }
     return socket_data.IsSocketValid();
 }
@@ -308,7 +319,6 @@ int ETLidarDriver::getScanData(lidarData& data) {
     }
 
     data.system_timestamp = CStatTimer::GetCurrentTime();
-
     /* check frame head */
     frame.frameHead = DSL(frame.frameBuf[0], 8) | DSL(frame.frameBuf[1], 0);
     if (FRAME_PREAMBLE != frame.frameHead) {
@@ -358,36 +368,42 @@ int ETLidarDriver::getScanData(lidarData& data) {
 
     /* parser data */
     data.data.resize(frame.dataNum);
+    lidarPot pot;
 
     if (frame.dataFormat == 0) {
-        for (uint32_t i = 0; i<frame.dataNum; i++) {
-            offset = frame.dataIndex + 4*i;
-            ydlidar::lidarPot pot;
-            pot.angle = (float)(DSL(frame.frameBuf[offset], 8) | DSL(frame.frameBuf[offset+1], 0))/100.f;
-            pot.range = (float)(DSL(frame.frameBuf[offset+2], 8) | DSL(frame.frameBuf[offset+3], 0))/1000.f;
-            pot.intensity = DEFAULT_INTENSITY;
-            data.data[i] = pot;
+      for (uint32_t i = 0; i<frame.dataNum; i++) {
+          offset = frame.dataIndex + 4*i;
+          pot.intensity = (uint16_t)(DSL(frame.frameBuf[offset], 8) | DSL(frame.frameBuf[offset+1], 0));
+          pot.range = (float)(DSL(frame.frameBuf[offset+2], 8) | DSL(frame.frameBuf[offset+3], 0))/1000.f;
+          if (i > 0) {
+              pot.angle = (float)(frame.frameCrc - frame.startAngle)/(frame.dataNum - 1)/100.f + data.data[i-1].angle;
+              if (pot.angle >= 360)
+                  pot.angle -= 360;
+          }else {
+              pot.angle = (float)frame.startAngle/100.f;
+          }
+          data.data[i] = pot;
 
-        }
+      }
+
     } else {
-        for (unsigned int i = 0; i<frame.dataNum; i++) {
-            offset = frame.dataIndex + 4*i;
-            ydlidar::lidarPot pot;
-            pot.intensity = (int)frame.frameBuf[offset];
-            pot.range = (float)(DSL(frame.frameBuf[offset+2], 8) | DSL(frame.frameBuf[offset+3], 0))/1000.f;
-            if (i > 0) {
-                pot.angle = (float)(frame.frameBuf[offset+1])/100.f + data.data[i-1].angle;
-                if (pot.angle >= 360)
-                    pot.angle -= 360;
-            }else {
-                pot.angle = (float)frame.startAngle/100.f;
-            }
-            data.data[i] = pot;
-        }
-
+      for (unsigned int i = 0; i<frame.dataNum; i++) {
+          offset = frame.dataIndex + 4*i;
+          pot.intensity = (uint16_t)frame.frameBuf[offset];
+          pot.range = (float)(DSL(frame.frameBuf[offset+2], 8) | DSL(frame.frameBuf[offset+3], 0))/1000.f;
+          if (i > 0) {
+              pot.angle = (float)(frame.frameBuf[offset+1])/100.f + data.data[i-1].angle;
+              if (pot.angle >= 360)
+                  pot.angle -= 360;
+          }else {
+              pot.angle = (float)frame.startAngle/100.f;
+          }
+          data.data[i] = pot;
+      }
     }
     data.self_timestamp = (uint64_t)(frame.timestamp*100);
     data.headFrameFlag = (int)frame.headFrameFlag;
+    data.scan_time     = 1e9/m_sampleRate*frame.dataNum;
 
     return frame.dataNum;
 
