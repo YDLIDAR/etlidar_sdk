@@ -426,6 +426,7 @@ int ETLidarDriver::cacheScanData() {
   fprintf(stdout,"scanning thread exiting....\n");
   fflush(stdout);
   stop();
+  return 0;
 }
 
 
