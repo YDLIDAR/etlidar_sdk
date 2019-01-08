@@ -105,6 +105,7 @@ void ETLidarDriver::disconnect() {
   if(socket_cmd.IsSocketValid()) {
       stopMeasure();
   }
+  stop();
   socket_cmd.Close();
   socket_data.Close();
     
@@ -133,6 +134,8 @@ result_t ETLidarDriver::startScan(uint32_t timeout) {
     ans = this->createThread();
     return ans;
   }
+  fprintf(stdout,"Current Lidar is Scanning....\n");
+  fflush(stdout);
   return RESULT_OK;
 }
 
@@ -142,11 +145,11 @@ bool ETLidarDriver::isscanning() const {
 
 result_t ETLidarDriver::stop() {
   ScopedLocker l(_lock);
+  disableDataGrabbing();
   bool ret = stopMeasure();
   if(!ret) {
     stopMeasure();
   }
-  disableDataGrabbing();
   return RESULT_OK;
 }
 
@@ -421,7 +424,9 @@ int ETLidarDriver::cacheScanData() {
           isScanning = false;
       }
   }
-  stopMeasure();
+  fprintf(stdout,"scanning thread exiting....\n");
+  fflush(stdout);
+  stop();
 }
 
 
