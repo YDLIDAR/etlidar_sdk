@@ -29,7 +29,6 @@
 #include <stdio.h>
 
 /*Socket Specific headers */
-#include <unistd.h>
 #include <errno.h>
 
 using namespace ydlidar;
