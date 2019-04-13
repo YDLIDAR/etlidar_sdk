@@ -58,7 +58,7 @@ class ETLidarDriver {
    * @return
    */
 
-  result_t connect(const std::string &ip_address, uint32_t port = 9000);
+  result_t connect(const std::string &ip_address, uint32_t port = 8000);
 
   /**
    * @brief isconnected
@@ -69,6 +69,19 @@ class ETLidarDriver {
   * @brief Disconnect from ETLidar device.
   */
   void disconnect();
+
+  /**
+  * @brief Get current scan configuration.
+  * @returns scanCfg structure.
+  */
+  bool getScanCfg(lidarConfig &config, const std::string &ip_address = "");
+
+  /**
+   * @brief updateScanCfg
+   * @param config
+   */
+  void updateScanCfg(const lidarConfig &config);
+
 
   /** returns true if the lidar data is normal, If it's not*/
   bool checkLidarAbnormal();
@@ -115,6 +128,14 @@ class ETLidarDriver {
   bool configPortConnect(const char *lidarIP, int tcpPort = 9000);
 
   void disConfigConnect();
+
+  /**
+  * @brief Set scan configuration.
+  * @param cfg structure containing scan configuration.
+  */
+  void setScanCfg(const lidarConfig &config);
+
+
   /**
   * @brief Disconnect from ETLidar device.
   */
@@ -131,18 +152,6 @@ class ETLidarDriver {
   * After receiving this command ETLidar unit stop spinning laser and measuring.
   */
   bool stopMeasure();
-
-  /**
-  * @brief Get current scan configuration.
-  * @returns scanCfg structure.
-  */
-  lidarConfig getScanCfg();
-
-  /**
-  * @brief Set scan configuration.
-  * @param cfg structure containing scan configuration.
-  */
-  void setScanCfg(const lidarConfig &config);
 
   /**
   * @brief Connect data port to ETLidar.
@@ -182,8 +191,10 @@ class ETLidarDriver {
 
   lidarData       global_scan_data;
   lidarConfig     m_config;
+  lidarConfig     m_user_config;
   size_t          offset_len;
   int             m_AbnormalCheckCount;
+  bool            m_force_update;
 
   enum {
     DEFAULT_TIMEOUT 	= 2000,    /**< 默认超时时间. */

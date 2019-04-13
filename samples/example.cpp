@@ -45,6 +45,7 @@ using namespace ydlidar;
 int main(int argc, char **argv) {
 
   std::string lidarIP;
+  std::string port;
   ydlidar::init(argc, argv);
 
 again:
@@ -66,15 +67,42 @@ again:
     goto again;
   }
 
-  ydlidar::console.message("SDK Version: %s", SDK_VERSION);
-  ydlidar::console.message("LIDAR Version: %s", EHLIDAR_VERSION);
   ydlidar::ETLidarDriver lidar;
+  lidarConfig config;
+
+  if (!lidar.getScanCfg(config, lidarIP)) {
+    return 0;
+  }
+
+
+  printf("Please enter the lidar port[%d](yes):", config.dataRecvPort);
+  std::cin >> port;
+
+  if (port.find("yes") == std::string::npos) {
+    config.dataRecvPort = atoi(port.c_str());
+  }
 
   if (!ydlidar::ok()) {
     return 0;
   }
 
-  result_t ans = lidar.connect(lidarIP);
+  printf("Please enter the lidar scan frequency[%dHZ](yes):",
+         config.motor_rpm / 60);
+  std::cin >> port;
+
+  if (port.find("yes") == std::string::npos) {
+    config.motor_rpm = atoi(port.c_str()) * 60;
+  }
+
+  if (!ydlidar::ok()) {
+    return 0;
+  }
+
+  lidar.updateScanCfg(config);
+  ydlidar::console.message("SDK Version: %s", SDK_VERSION);
+  ydlidar::console.message("LIDAR Version: %s", EHLIDAR_VERSION);
+
+  result_t ans = lidar.connect(lidarIP, config.dataRecvPort);
 
   if (!IS_OK(ans)) {
     ydlidar::console.error("Failed to connecting lidar...");

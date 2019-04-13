@@ -43,7 +43,8 @@ ETLidarDriver::ETLidarDriver() :
   m_deviceIp("192.168.0.11"),
   m_port(9000),
   m_sampleRate(20000),
-  m_AbnormalCheckCount(2) {
+  m_AbnormalCheckCount(2),
+  m_force_update(false) {
 
   socket_data.SetSocketType(CSimpleSocket::SocketTypeUdp);
   socket_cmd.SetConnectTimeout(DEFAULT_CONNECT_TIMEOUT_SEC,
@@ -56,9 +57,18 @@ ETLidarDriver::~ETLidarDriver() {
   disconnect();
 }
 
+void ETLidarDriver::updateScanCfg(const lidarConfig &config) {
+  if (m_isConnected) {
+    return;
+  }
+
+  m_force_update = true;
+  m_user_config = config;
+
+}
+
 result_t ETLidarDriver::connect(const std::string &ip_address, uint32_t port) {
   m_deviceIp = ip_address;
-  m_port = port;
   m_isConnected = false;
 
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
@@ -66,15 +76,29 @@ result_t ETLidarDriver::connect(const std::string &ip_address, uint32_t port) {
     return RESULT_FAIL;
   }
 
-  lidarConfig config = getScanCfg();
+  lidarConfig config;
+  getScanCfg(config);
 
-  if (!dataPortConnect(config.deviceIp, config.dataRecvPort)) {
+  if (config.dataRecvPort != port) {
+    if (!m_force_update) {
+      m_user_config = config;
+      m_user_config.dataRecvPort = port;
+      m_force_update = true;
+    }
+  }
+
+  if (m_force_update) {
+    setScanCfg(m_user_config);
+  } else {
+    m_user_config = config;
+  }
+
+  if (!dataPortConnect(m_config.deviceIp, m_config.dataRecvPort)) {
     stopMeasure();
     ydlidar::console.error("%s", socket_data.DescribeError());
     return RESULT_FAIL;
   }
 
-  m_config = config;
   m_isConnected = true;
   return RESULT_OK;
 }
@@ -292,7 +316,7 @@ char *ETLidarDriver::configMessage(const char *descriptor, char *value) {
 }
 
 bool ETLidarDriver::startMeasure() {
-  bool ret ;
+  bool ret;
 
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
     ydlidar::console.error("%s", socket_cmd.DescribeError());
@@ -320,54 +344,69 @@ bool ETLidarDriver::stopMeasure() {
   return ret;
 }
 
-lidarConfig ETLidarDriver::getScanCfg() {
+bool ETLidarDriver::getScanCfg(lidarConfig &config,
+                               const std::string &ip_address) {
+  bool ret = false;
+
+  if (!ip_address.empty()) {
+    m_deviceIp = ip_address;
+  }
+
   lidarConfig cfg;
 
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
     ydlidar::console.error("%s", socket_cmd.DescribeError());
-    return  cfg;
+    config = m_config;
+    return  ret;
   }
 
   char *result = configMessage(valName(cfg.laser_en));
 
   if (result != NULL) {
     cfg.laser_en = atoi(result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.motor_en));
 
   if (result != NULL) {
     cfg.motor_en = atoi(result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.motor_rpm));
 
   if (result != NULL) {
     cfg.motor_rpm = atoi(result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.fov_start));
 
   if (result != NULL) {
     cfg.fov_start = atoi(result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.fov_end));
 
   if (result != NULL) {
     cfg.fov_end = atoi(result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.trans_sel));
 
   if (result != NULL) {
     cfg.trans_sel = atoi(result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.dataRecvPort));
 
   if (result != NULL) {
     cfg.dataRecvPort = atoi(result);
+    ret = true;
   }
 
 
@@ -375,24 +414,28 @@ lidarConfig ETLidarDriver::getScanCfg() {
 
   if (result != NULL) {
     cfg.dhcp_en = atoi(result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.dataRecvIp));
 
   if (result != NULL) {
     strcpy(cfg.dataRecvIp, result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.deviceIp));
 
   if (result != NULL) {
     strcpy(cfg.deviceIp, result);
+    ret = true;
   }
 
   result = configMessage(valName(cfg.deviceNetmask));
 
   if (result != NULL) {
     strcpy(cfg.deviceNetmask, result);
+    ret = true;
   }
 
 
@@ -400,10 +443,21 @@ lidarConfig ETLidarDriver::getScanCfg() {
 
   if (result != NULL) {
     strcpy(cfg.deviceGatewayIp, result);
+    ret = true;
   }
 
+  result = configMessage(valName(cfg.laserScanFrequency));
+
+  if (result != NULL) {
+    cfg.laserScanFrequency = atoi(result);
+    m_sampleRate = 1000 / cfg.laserScanFrequency * 1000;
+    ret = true;
+  }
+
+  m_config = cfg;
+  config = cfg;
   disConfigConnect();
-  return cfg;
+  return ret;
 }
 
 
@@ -415,34 +469,61 @@ void ETLidarDriver::setScanCfg(const lidarConfig &config) {
     return ;
   }
 
-  _itoa(config.laser_en, str, 10);
-  configMessage(valName(config.laser_en), str);
+  char *result = NULL;
 
-  _itoa(config.motor_en, str, 10);
-  configMessage(valName(config.motor_en), str);
+  if (m_config.motor_rpm != config.motor_rpm) {
+    _itoa(config.motor_rpm, str, 10);
+    result = configMessage(valName(config.motor_rpm), str);
 
-  _itoa(config.motor_rpm, str, 10);
-  configMessage(valName(config.motor_rpm), str);
+    if (result != NULL) {
+      m_config.motor_rpm = atoi(result);
+      ydlidar::console.message("reset motor RPM[%d] successfully!",
+                               m_config.motor_rpm);
+    }
+  }
 
-  _itoa(config.fov_start, str, 10);
-  configMessage(valName(config.fov_start), str);
 
-  _itoa(config.fov_end, str, 10);
-  configMessage(valName(config.fov_end), str);
+  if (m_config.fov_start != config.fov_start) {
+    _itoa(config.fov_start, str, 10);
+    result = configMessage(valName(config.fov_start), str);
 
-  _itoa(config.trans_sel, str, 10);
-  configMessage(valName(config.trans_sel), str);
+    if (result != NULL) {
+      m_config.fov_start = atoi(result);
+    }
+  }
 
-  _itoa(config.dataRecvPort, str, 10);
-  configMessage(valName(config.dataRecvPort), str);
 
-  _itoa(config.dhcp_en, str, 10);
-  configMessage(valName(config.dhcp_en), str);
+  if (m_config.fov_end != config.fov_end) {
+    _itoa(config.fov_end, str, 10);
+    result = configMessage(valName(config.fov_end), str);
 
-  configMessage(valName(config.dataRecvIp), (char *)config.dataRecvIp);
-  configMessage(valName(config.deviceIp), (char *)config.deviceIp);
-  configMessage(valName(config.deviceNetmask), (char *)config.deviceNetmask);
-  configMessage(valName(config.deviceGatewayIp), (char *)config.deviceGatewayIp);
+    if (result != NULL) {
+      m_config.fov_end = atoi(result);
+    }
+  }
+
+
+  if (m_config.dataRecvPort != config.dataRecvPort) {
+    _itoa(config.dataRecvPort, str, 10);
+    result = configMessage(valName(config.dataRecvPort), str);
+
+    if (result != NULL) {
+      m_config.dataRecvPort = atoi(result);
+      ydlidar::console.message("reset data Port[%d] successfully!",
+                               m_config.dataRecvPort);
+    }
+  }
+
+
+  if (strcmp(m_config.dataRecvIp, config.dataRecvIp)) {
+    result = configMessage(valName(config.dataRecvIp), (char *)config.dataRecvIp);
+
+    if (result != NULL) {
+      ydlidar::console.message("reset data IP[%s] successfully!",
+                               m_config.dataRecvIp);
+      strcpy(m_config.dataRecvIp, result);
+    }
+  }
 
   disConfigConnect();
 }
