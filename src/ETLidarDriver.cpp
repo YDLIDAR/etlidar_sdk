@@ -122,6 +122,7 @@ bool ETLidarDriver::configPortConnect(const char *lidarIP, int tcpPort) {
   socket_cmd.SetNonblocking();
 
   if (!socket_cmd.Open(lidarIP, tcpPort)) {
+    socket_cmd.Close();
     return false;
   }
 
@@ -136,7 +137,6 @@ void ETLidarDriver::disConfigConnect() {
 
 void ETLidarDriver::disconnect() {
   disableDataGrabbing();
-  stop();
   socket_data.Close();
 
 }
@@ -146,7 +146,7 @@ void ETLidarDriver::disconnect() {
 -------------------------------------------------------------*/
 bool  ETLidarDriver::turnOn() {
   if (m_isScanning) {
-    true;
+    return true;
   }
 
   // start scan...
@@ -181,10 +181,9 @@ bool  ETLidarDriver::turnOn() {
 -------------------------------------------------------------*/
 bool  ETLidarDriver::turnOff() {
   if (m_isScanning) {
+    stop();
     ydlidar::console.message("[YDLIDAR INFO] Now YDLIDAR Scanning has stopped ......");
   }
-
-  stop();
   m_isScanning = false;
   return true;
 }
@@ -224,11 +223,6 @@ bool ETLidarDriver::checkLidarAbnormal() {
 
 result_t ETLidarDriver::startScan(uint32_t timeout) {
   result_t ans;
-
-  if (!m_isConnected) {
-    return RESULT_FAIL;
-  }
-
   if (m_isScanning) {
     return RESULT_OK;
   }
