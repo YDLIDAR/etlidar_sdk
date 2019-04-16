@@ -85,7 +85,7 @@ class ETLidarDriver {
   * @brief Get current scan update configuration.
   * @returns scanCfg structure.
   */
-  bool getFinishedScanCfg();
+  lidarConfig getFinishedScanCfg();
 
   /**
    * @brief updateScanCfg
