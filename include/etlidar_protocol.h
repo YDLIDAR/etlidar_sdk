@@ -149,11 +149,11 @@ typedef struct _lidarConfig {
  */
 typedef struct _lidarPot {
   /**
-   * @brief range
+   * @brief range(uint m)
    */
   float range;
   /**
-   * @brief angle
+   * @brief angle(unit °)
    */
   float angle;
   /**

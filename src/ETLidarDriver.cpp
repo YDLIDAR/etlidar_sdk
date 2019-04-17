@@ -25,7 +25,11 @@
 *                                                                            *
 *****************************************************************************/
 
+#include "PassiveSocket.h"
+#include "SimpleSocket.h"
 #include "ETLidarDriver.h"
+#include "Console.h"
+#include "DeviceException.h"
 #include <stdio.h>
 
 /*Socket Specific headers */
@@ -46,22 +50,37 @@ ETLidarDriver::ETLidarDriver() :
   m_AbnormalCheckCount(2),
   m_force_update(false) {
 
-  socket_data.SetSocketType(CSimpleSocket::SocketTypeUdp);
-  socket_cmd.SetConnectTimeout(DEFAULT_CONNECT_TIMEOUT_SEC,
-                               DEFAULT_CONNECT_TIMEOUT_USEC);
+  socket_cmd = new CActiveSocket(CSimpleSocket::SocketTypeTcp);
+  socket_data = new CPassiveSocket(CSimpleSocket::SocketTypeUdp);
+  socket_data->SetSocketType(CSimpleSocket::SocketTypeUdp);
+  socket_cmd->SetConnectTimeout(DEFAULT_CONNECT_TIMEOUT_SEC,
+                                DEFAULT_CONNECT_TIMEOUT_USEC);
   global_scan_data.data.clear();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
 ETLidarDriver::~ETLidarDriver() {
   disconnect();
+  ScopedLocker data_lock(_data_lock);
+
+  if (socket_data) {
+    delete socket_data;
+    socket_data = NULL;
+  }
+
+  ScopedLocker lock(_cmd_lock);
+
+  if (socket_cmd) {
+    delete socket_cmd;
+    socket_cmd = NULL;
+  }
 }
 
 void ETLidarDriver::WSACleanUp() {
   CSimpleSocket::WSACleanUp();
 }
 
-void ETLidarDriver::updateScanCfg(const lidarConfig& config) {
+void ETLidarDriver::updateScanCfg(const lidarConfig &config) {
   if (m_isConnected) {
     return;
   }
@@ -71,12 +90,12 @@ void ETLidarDriver::updateScanCfg(const lidarConfig& config) {
 
 }
 
-result_t ETLidarDriver::connect(const std::string& ip_address, uint32_t port) {
+result_t ETLidarDriver::connect(const std::string &ip_address, uint32_t port) {
   m_deviceIp = ip_address;
   m_isConnected = false;
 
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
-    ydlidar::console.error("%s", socket_cmd.DescribeError());
+    ydlidar::console.error("%s", DescribeError());
     return RESULT_FAIL;
   }
 
@@ -99,7 +118,7 @@ result_t ETLidarDriver::connect(const std::string& ip_address, uint32_t port) {
 
   if (!dataPortConnect(m_config.deviceIp, m_config.dataRecvPort)) {
     stopMeasure();
-    ydlidar::console.error("%s", socket_data.DescribeError());
+    ydlidar::console.error("%s", DescribeError(false));
     return RESULT_FAIL;
   }
 
@@ -111,39 +130,64 @@ bool ETLidarDriver::isConnected() const {
   return m_isConnected;
 }
 
-bool ETLidarDriver::configPortConnect(const char* lidarIP, int tcpPort) {
+const char *ETLidarDriver::DescribeError(bool isTcp) {
+
+  if (isTcp) {
+    ScopedLocker lock(_cmd_lock);
+    return socket_cmd != NULL ? socket_cmd->DescribeError() : "NO Socket";
+  } else {
+    ScopedLocker lock(_data_lock);
+    return socket_data != NULL ? socket_data->DescribeError() : "NO Socket";
+  }
+}
+
+bool ETLidarDriver::configPortConnect(const char *lidarIP, int tcpPort) {
 
   ScopedLocker lock(_cmd_lock);
 
-  if (!socket_cmd.IsSocketValid()) {
-    if (!socket_cmd.Initialize()) {
-      return false;
-    }
-  } else {
-    return socket_cmd.IsSocketValid();
-  }
-
-  socket_cmd.SetNonblocking();
-
-  if (!socket_cmd.Open(lidarIP, tcpPort)) {
-    socket_cmd.Close();
+  if (!socket_cmd) {
     return false;
   }
 
-  socket_cmd.SetReceiveTimeout(DEFAULT_TIMEOUT, 0);
-  socket_cmd.SetBlocking();
-  return socket_cmd.IsSocketValid();
+  if (!socket_cmd->IsSocketValid()) {
+    if (!socket_cmd->Initialize()) {
+      return false;
+    }
+  } else {
+    return socket_cmd->IsSocketValid();
+  }
+
+  socket_cmd->SetNonblocking();
+
+  if (!socket_cmd->Open(lidarIP, tcpPort)) {
+    socket_cmd->Close();
+    return false;
+  }
+
+  socket_cmd->SetReceiveTimeout(DEFAULT_TIMEOUT, 0);
+  socket_cmd->SetBlocking();
+  return socket_cmd->IsSocketValid();
 }
 
 void ETLidarDriver::disConfigConnect() {
   ScopedLocker lock(_cmd_lock);
-  socket_cmd.Close();
+
+  if (!socket_cmd) {
+    return;
+  }
+
+  socket_cmd->Close();
 }
 
 void ETLidarDriver::disconnect() {
   disableDataGrabbing();
   ScopedLocker lock(_data_lock);
-  socket_data.Close();
+
+  if (!socket_data) {
+    return;
+  }
+
+  socket_data->Close();
 
 }
 
@@ -171,7 +215,7 @@ bool  ETLidarDriver::turnOn() {
   if (checkLidarAbnormal()) {
     stop();
     ydlidar::console.error(
-        "[CYdLidar] Failed to turn on the Lidar, because the lidar is blocked or the lidar hardware is faulty.");
+      "[CYdLidar] Failed to turn on the Lidar, because the lidar is blocked or the lidar hardware is faulty.");
     m_isScanning = false;
     return false;
   }
@@ -190,6 +234,7 @@ bool  ETLidarDriver::turnOff() {
     stop();
     ydlidar::console.message("[YDLIDAR INFO] Now YDLIDAR Scanning has stopped ......");
   }
+
   m_isScanning = false;
   return true;
 }
@@ -229,6 +274,7 @@ bool ETLidarDriver::checkLidarAbnormal() {
 
 result_t ETLidarDriver::startScan(uint32_t timeout) {
   result_t ans;
+
   if (m_isScanning) {
     return RESULT_OK;
   }
@@ -279,7 +325,7 @@ result_t ETLidarDriver::createThread() {
 }
 
 
-char* ETLidarDriver::configMessage(const char* descriptor, char* value) {
+char *ETLidarDriver::configMessage(const char *descriptor, char *value) {
   char buf[100];
   char transDesc[32];
   char recvDesc[32];
@@ -291,12 +337,16 @@ char* ETLidarDriver::configMessage(const char* descriptor, char* value) {
   sprintf(buf, "%s=%s\n", transDesc, value);
   ScopedLocker lock(_cmd_lock);
 
-  socket_cmd.Send(reinterpret_cast<uint8_t*>(buf), strlen(buf));
+  if (!socket_cmd) {
+    return NULL;
+  }
+
+  socket_cmd->Send(reinterpret_cast<uint8_t *>(buf), strlen(buf));
 
   memset(buf, 0, sizeof(buf));
 
-  if (socket_cmd.Select(0, 50000)) {
-    socket_cmd.Receive(sizeof(buf), reinterpret_cast<uint8_t*>(buf));
+  if (socket_cmd->Select(0, 50000)) {
+    socket_cmd->Receive(sizeof(buf), reinterpret_cast<uint8_t *>(buf));
 
     if (2 == sscanf(buf, "%[^=]=%[^=]", recvDesc, recvValue)) {
       if (!strcmp(transDesc, recvDesc)) {
@@ -319,27 +369,27 @@ bool ETLidarDriver::startMeasure() {
   bool ret;
 
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
-    ydlidar::console.error("%s", socket_cmd.DescribeError());
+    ydlidar::console.error("%s", DescribeError());
     return  false;
   }
 
   lidarConfig cfg;
-  ret = configMessage(valName(cfg.motor_en), (char*)configValue[1]) != NULL;
-  ret &= configMessage(valName(cfg.laser_en), (char*)configValue[1]) != NULL;
+  ret = configMessage(valName(cfg.motor_en), (char *)configValue[1]) != NULL;
+  ret &= configMessage(valName(cfg.laser_en), (char *)configValue[1]) != NULL;
   disConfigConnect();
   return ret;
 }
 
 bool ETLidarDriver::stopMeasure() {
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
-    ydlidar::console.error("%s", socket_cmd.DescribeError());
+    ydlidar::console.error("%s", DescribeError());
     return  false;
   }
 
   bool ret ;
   lidarConfig cfg;
-  ret = configMessage(valName(cfg.motor_en), (char*)configValue[0]) != NULL;
-  ret &= configMessage(valName(cfg.laser_en), (char*)configValue[0]) != NULL;
+  ret = configMessage(valName(cfg.motor_en), (char *)configValue[0]) != NULL;
+  ret &= configMessage(valName(cfg.laser_en), (char *)configValue[0]) != NULL;
   disConfigConnect();
   return ret;
 }
@@ -348,8 +398,8 @@ lidarConfig ETLidarDriver::getFinishedScanCfg() {
   return m_config;
 }
 
-bool ETLidarDriver::getScanCfg(lidarConfig& config,
-                               const std::string& ip_address) {
+bool ETLidarDriver::getScanCfg(lidarConfig &config,
+                               const std::string &ip_address) {
   bool ret = false;
 
   if (!ip_address.empty()) {
@@ -359,12 +409,12 @@ bool ETLidarDriver::getScanCfg(lidarConfig& config,
   lidarConfig cfg;
 
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
-    ydlidar::console.error("%s", socket_cmd.DescribeError());
+    ydlidar::console.error("%s", DescribeError());
     config = m_config;
     return  ret;
   }
 
-  char* result = configMessage(valName(cfg.laser_en));
+  char *result = configMessage(valName(cfg.laser_en));
 
   if (result != NULL) {
     cfg.laser_en = atoi(result);
@@ -457,25 +507,26 @@ bool ETLidarDriver::getScanCfg(lidarConfig& config,
     m_sampleRate = 1000 / cfg.laserScanFrequency * 1000;
     ret = true;
   }
+
   if (ret) {
     m_config = cfg;
     config = cfg;
   }
-  
+
   disConfigConnect();
   return ret;
 }
 
 
-void ETLidarDriver::setScanCfg(const lidarConfig& config) {
+void ETLidarDriver::setScanCfg(const lidarConfig &config) {
   char str[32];
 
   if (!configPortConnect(m_deviceIp.c_str(), m_port)) {
-    ydlidar::console.error("%s", socket_cmd.DescribeError());
+    ydlidar::console.error("%s", DescribeError());
     return ;
   }
 
-  char* result = NULL;
+  char *result = NULL;
 
   if (m_config.motor_rpm != config.motor_rpm) {
     _itoa(config.motor_rpm, str, 10);
@@ -522,7 +573,7 @@ void ETLidarDriver::setScanCfg(const lidarConfig& config) {
 
 
   if (strcmp(m_config.dataRecvIp, config.dataRecvIp)) {
-    result = configMessage(valName(config.dataRecvIp), (char*)config.dataRecvIp);
+    result = configMessage(valName(config.dataRecvIp), (char *)config.dataRecvIp);
 
     if (result != NULL) {
       ydlidar::console.message("reset data IP[%s] successfully!",
@@ -536,20 +587,25 @@ void ETLidarDriver::setScanCfg(const lidarConfig& config) {
 
 
 
-bool ETLidarDriver::dataPortConnect(const char* lidarIP, int localPort) {
+bool ETLidarDriver::dataPortConnect(const char *lidarIP, int localPort) {
   ScopedLocker lock(_data_lock);
-  if (!socket_data.IsSocketValid()) {
-    if (socket_data.Initialize()) {
-      if (!socket_data.Listen(NULL, localPort)) {
-        socket_data.Close();
+
+  if (!socket_data) {
+    return false;
+  }
+
+  if (!socket_data->IsSocketValid()) {
+    if (socket_data->Initialize()) {
+      if (!socket_data->Listen(NULL, localPort)) {
+        socket_data->Close();
         return false;
       }
 
-      socket_data.SetReceiveTimeout(DEFAULT_TIMEOUT, 0);
+      socket_data->SetReceiveTimeout(DEFAULT_TIMEOUT, 0);
     }
   }
 
-  return socket_data.IsSocketValid();
+  return socket_data->IsSocketValid();
 }
 
 void ETLidarDriver::disableDataGrabbing() {
@@ -565,7 +621,7 @@ void ETLidarDriver::disableDataGrabbing() {
 }
 
 
-result_t ETLidarDriver::grabScanData(lidarData& scan, uint32_t timeout) {
+result_t ETLidarDriver::grabScanData(lidarData &scan, uint32_t timeout) {
   switch (_dataEvent.wait(timeout)) {
     case Event::EVENT_TIMEOUT:
       return RESULT_TIMEOUT;
@@ -633,7 +689,7 @@ int ETLidarDriver::cacheScanData() {
       }
 
       timeout = 0;
-    } catch (TimeoutException& e) {
+    } catch (TimeoutException &e) {
       timeout++;
       scandata.data.clear();
       ydlidar::console.error("timeout[%d]:%s", timeout, e.what());
@@ -644,10 +700,10 @@ int ETLidarDriver::cacheScanData() {
         continue;
       }
 
-    } catch (CorruptedDataException& e) {
+    } catch (CorruptedDataException &e) {
       ydlidar::console.error("scan data parse error: %s", e.what());
       continue;
-    } catch (DeviceException& e) {
+    } catch (DeviceException &e) {
       ydlidar::console.error("%s", e.what());
       m_isScanning = false;
     } catch (...) {
@@ -660,7 +716,7 @@ int ETLidarDriver::cacheScanData() {
 }
 
 
-int ETLidarDriver::getScanData(lidarData& data) {
+int ETLidarDriver::getScanData(lidarData &data) {
 
   int offset;
 
@@ -668,9 +724,14 @@ int ETLidarDriver::getScanData(lidarData& data) {
   /* wait data from socket. */
   {
     ScopedLocker lock(_data_lock);
-    if (socket_data.Receive(sizeof(frame.frameBuf),
-                            reinterpret_cast<uint8_t*>(frame.frameBuf)) < 0) {
-      throw TimeoutException(socket_data.DescribeError());
+
+    if (!socket_data) {
+      return -1;
+    }
+
+    if (socket_data->Receive(sizeof(frame.frameBuf),
+                             reinterpret_cast<uint8_t *>(frame.frameBuf)) < 0) {
+      throw TimeoutException(DescribeError(false));
     }
   }
 
@@ -762,7 +823,7 @@ int ETLidarDriver::getScanData(lidarData& data) {
 
       if (i > 0) {
         pot.angle = (float)(frame.frameBuf[offset + 1]) / 100.f + data.data[i -
-                                                                            1].angle;
+                    1].angle;
 
         if (pot.angle >= 360) {
           pot.angle -= 360;

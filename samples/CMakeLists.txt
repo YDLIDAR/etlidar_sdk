@@ -42,3 +42,9 @@ ADD_EXECUTABLE(${PROJECT_NAME} example.cpp)
 
 # Add the required libraries for linking:
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} etlidar_driver)
+
+INSTALL(TARGETS etlidar_test
+       RUNTIME DESTINATION bin
+       LIBRARY DESTINATION lib
+       ARCHIVE DESTINATION lib
+)

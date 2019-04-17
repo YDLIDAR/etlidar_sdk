@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 2.8)
 project( etlidar_driver )
 set(LIDAR_VERSION_MAJOR 1)
-set(LIDAR_VERSION_MINOR 1)
+set(LIDAR_VERSION_MINOR 2)
 set(LIDAR_VERSION ${LIDAR_VERSION_MAJOR}.${LIDAR_VERSION_MINOR})
-set( SDK_VERSION 1.1 )
+set( SDK_VERSION 1.2 )
 #add_definitions(-std=c++11) # Use C++11
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 include_directories(include)
@@ -39,3 +39,16 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/config.h.in"
 set( GENERATED_HEADERS  ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 include_directories( ${CMAKE_BINARY_DIR} )
+
+INSTALL(TARGETS etlidar_driver etlidar_driver_static
+       RUNTIME DESTINATION bin
+       LIBRARY DESTINATION lib
+       ARCHIVE DESTINATION lib
+)
+
+install(FILES include/v8stdint.h
+    include/ETLidarDriver.h
+    include/etlidar_protocol.h
+    ${CMAKE_CURRENT_BINARY_DIR}/config.h
+    include/locker.h
+    include/thread.h DESTINATION include)

@@ -24,10 +24,9 @@
 *----------------------------------------------------------------------------*
 *                                                                            *
 *****************************************************************************/
-
-
 #include "ETLidarDriver.h"
 #include <config.h>
+#include "Console.h"
 
 #include <iostream>
 #include <iterator>
@@ -42,7 +41,7 @@
 using namespace ydlidar;
 
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
 
   std::string lidarIP;
   std::string port;
@@ -71,6 +70,7 @@ again:
   lidarConfig config;
 
   if (!lidar.getScanCfg(config, lidarIP)) {
+    ydlidar::console.error("Failed to get Lidar Config. exit...");
     return 0;
   }
 

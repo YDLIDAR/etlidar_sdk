@@ -28,20 +28,22 @@
 #pragma once
 
 /* Header file to enable threading and ergo callback */
-#include "PassiveSocket.h"
-#include "SimpleSocket.h"
 #include "thread.h"
 #include "locker.h"
 #include "etlidar_protocol.h"
 #include <vector>
 /* Header files for socket variable */
-#include "DeviceException.h"
-#include "Console.h"
+
 
 namespace ydlidar {
 
+class CActiveSocket;
+class CPassiveSocket;
+
+
 class ETLidarDriver {
  public:
+
   /**
    * @brief ETLidarDriver
    * @param lidarIP
@@ -63,7 +65,7 @@ class ETLidarDriver {
    * @param port
    * @return
    */
-  result_t connect(const std::string& ip_address, uint32_t port = 8000);
+  result_t connect(const std::string &ip_address, uint32_t port = 8000);
 
   /**
    * @brief isconnected
@@ -79,8 +81,8 @@ class ETLidarDriver {
   * @brief Get current scan configuration.
   * @returns scanCfg structure.
   */
-  bool getScanCfg(lidarConfig& config, const std::string& ip_address = "");
-  
+  bool getScanCfg(lidarConfig &config, const std::string &ip_address = "");
+
   /**
   * @brief Get current scan update configuration.
   * @returns scanCfg structure.
@@ -91,7 +93,7 @@ class ETLidarDriver {
    * @brief updateScanCfg
    * @param config
    */
-  void updateScanCfg(const lidarConfig& config);
+  void updateScanCfg(const lidarConfig &config);
 
 
   /** returns true if the lidar data is normal, If it's not*/
@@ -121,7 +123,14 @@ class ETLidarDriver {
    * @param timeout
    * @return
    */
-  result_t grabScanData(lidarData& scan, uint32_t timeout = DEFAULT_TIMEOUT) ;
+  result_t grabScanData(lidarData &scan, uint32_t timeout = DEFAULT_TIMEOUT) ;
+
+  /**
+   * @brief get socket describe error
+   * @param isTcp tcp/udp socket
+   * @return
+   */
+  const char *DescribeError(bool isTcp = true);
 
 
  private:
@@ -136,7 +145,7 @@ class ETLidarDriver {
   * @brief Connect config port to ETLidar.
   * @param remote IP & port.
   */
-  bool configPortConnect(const char* lidarIP, int tcpPort = 9000);
+  bool configPortConnect(const char *lidarIP, int tcpPort = 9000);
 
   void disConfigConnect();
 
@@ -144,13 +153,13 @@ class ETLidarDriver {
   * @brief Set scan configuration.
   * @param cfg structure containing scan configuration.
   */
-  void setScanCfg(const lidarConfig& config);
+  void setScanCfg(const lidarConfig &config);
 
 
   /**
   * @brief Disconnect from ETLidar device.
   */
-  char* configMessage(const char* descriptor, char* value = NULL);
+  char *configMessage(const char *descriptor, char *value = NULL);
 
   /**
   * @brief Start measurements.
@@ -168,7 +177,7 @@ class ETLidarDriver {
   * @brief Connect data port to ETLidar.
   * @param remote IP & local port.
   */
-  bool dataPortConnect(const char* lidarIP, int localPort = 8000);
+  bool dataPortConnect(const char *lidarIP, int localPort = 8000);
 
   /**
    * @brief createThread
@@ -185,7 +194,7 @@ class ETLidarDriver {
   *
   * @param data pointer to lidarData buffer structure.
   */
-  int getScanData(lidarData& data);
+  int getScanData(lidarData &data);
 
   /**
   * @brief parsing scan \n
@@ -220,10 +229,10 @@ class ETLidarDriver {
   int                       m_port;
   int                       m_sampleRate;
   /* Sockets for ydlidar */
-  CActiveSocket             socket_cmd;
-  CPassiveSocket            socket_data;
+  CActiveSocket             *socket_cmd;
+  CPassiveSocket            *socket_data;
   dataFrame                 frame;
-  const char*               configValue[2] = {"0", "1"};
+  const char               *configValue[2] = {"0", "1"};
 
 };
 
