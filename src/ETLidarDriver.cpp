@@ -166,7 +166,7 @@ bool ETLidarDriver::configPortConnect(const char *lidarIP, int tcpPort) {
 
   socket_cmd->SetReceiveTimeout(DEFAULT_TIMEOUT / 1000, DEFAULT_TIMEOUT % 1000);
   socket_cmd->SetSendTimeout(DEFAULT_TIMEOUT / 1000, DEFAULT_TIMEOUT % 1000);
-//  socket_cmd->SetBlocking();
+  socket_cmd->SetBlocking();
   return socket_cmd->IsSocketValid();
 }
 
@@ -346,7 +346,7 @@ char *ETLidarDriver::configMessage(const char *descriptor, char *value) {
 
   memset(buf, 0, sizeof(buf));
 
-  if (socket_cmd->Select(0, 50000)) {
+  if (socket_cmd->Select(0, 500000)) {
     socket_cmd->Receive(sizeof(buf), reinterpret_cast<uint8_t *>(buf));
 
     if (2 == sscanf(buf, "%[^=]=%[^=]", recvDesc, recvValue)) {
