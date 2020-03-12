@@ -207,6 +207,7 @@ bool  ETLidarDriver::turnOn() {
     op_result = startScan();
 
     if (!IS_OK(op_result)) {
+      stop();
       ydlidar::console.error("[CYdLidar] Failed to start scan mode: %x", op_result);
       m_isScanning = false;
       return false;
@@ -314,6 +315,7 @@ result_t ETLidarDriver::stop() {
 }
 
 result_t ETLidarDriver::createThread() {
+  m_isScanning = true;
   _thread = CLASS_THREAD(ETLidarDriver, cacheScanData);
 
   if (_thread.getHandle() == 0) {
@@ -321,7 +323,6 @@ result_t ETLidarDriver::createThread() {
     return RESULT_FAIL;
   }
 
-  m_isScanning = true;
   return RESULT_OK;
 }
 
